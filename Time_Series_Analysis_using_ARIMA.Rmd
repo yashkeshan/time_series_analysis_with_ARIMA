@@ -1,0 +1,184 @@
+---
+title: "MIS6357_Homework2_Keshan"
+author: "Yash Keshan"
+date: "9/21/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Importing Required Libraries and Data
+#install.packages("pacman")
+pacman::p_load(fpp3, fpp2, patchwork, purrr, tsbox, urca, gridExtra)
+theme_set(theme_minimal())
+```
+
+```{r}
+#Storing the number of women murdered each year (per 100,000 standard population)
+#in the U.S. into variable "no_women" and printing out head of the data
+no_women <- wmurders
+head(no_women)
+```
+
+```{r}
+#Generating a plot with dataset to view murder rate over the years
+set.seed(42) 
+ggtsdisplay(no_women,xlab="Year",
+            ylab="Womens Murder Rate in the U.S/100,000 std population)",
+            main="Women Mudered 1950 to 2004 (no diff)")
+```
+1> Through the plot we clearly observe an upwards trend in the data between 1957 - 1973. There also exist a downwards trend between 1994 - 2004. Hence, the dataset is not stationary and there is absence of white noise in the data.
+2> In the above generated correlation graph we can easily identify that there is auto correlation between the first 9 lags. With the initial lags we see presence of high auto correlation. To implement ARIMA model our next steps would be to eliminate auto correlation and making mean and variance constant to make the series as stationary as possible / make it as close to white noise.
+
+```{r}
+#Finding number of differences required to stabilize the model using ndiffs()
+ndiffs(no_women)
+```
+As we can observe we need to perform 2nd order difference to remove trends and present auto correlation and hence make the the it stable/white noise. 
+
+```{r}
+#Performing 2nd order differences to the data
+no_women_2 <- no_women %>% diff(lag = 1) %>% diff(lag = 1)
+set.seed(42) 
+ggtsdisplay(no_women_2,xlab="Year",
+            ylab="Womens Murder Rate in the U.S/100,000 std population)",
+            main="Women Mudered 1950 to 2004 (second order diff)")
+```
+1> As we can see from the above generated graph after 2nd degree difference the generated graph is much more stationary and stable with a constant mean and constant variance.
+2> With updated plot starting negative almost 90% of the lags within the range of significance level we can say that majority of auto correlation has been discarded.
+
+```{r}
+#We are required to perform first order difference
+#Hence generating graphs for 1st order difference we get
+no_women_1 <- diff(no_women) # <- Performing First Order Difference
+no_women
+
+# Generating plots for first order difference
+set.seed(42) 
+ggtsdisplay(no_women_1,xlab="Year",
+            ylab="Womens Murder Rate in the U.S/100,000 std population)",
+            main="Women Mudered 1950 to 2004 (first order diff)")
+```
+
+```{r}
+#To statistically check if the graph is stationary 
+#we will perform KPSS Unit Root Test 
+#where our null hypothesis is that the series is stationary.
+#H0: Series is stationary
+#H1: Series is not stationary
+ur.kpss(no_women_1) %>%  summary()
+```
+t-statistics: 0.4679 < t-critical: 0.739
+Since t-statistics is less than the test critical value we failed to reject the null hypothesis of test (H0: Series is stationary).
+Hence we conclude that series is stationary and we may incorporate first order difference in out ARIMA model.
+
+Question 1:
+Answers-> Comparing the plots above with first order difference and one without difference we come to a conclusion that we should select ARIMA(0,d,q) model since we observe ACF & PCAF with similar significant number. 
+Selecting MA model.
+Selecting lag 'q = 2' due to resulting observation noting a spike at position lag 'q' and no other spikes beyond lag 'q = 2' in the ACF model. After performing KPSS test we observed that first order difference provides with stationary series.
+Due to all these reasons we select ARIMA(0,1,2) where; 
+AR = 0, D(d) = 1, MA(q) = 2
+
+Question 2:
+Answers -> Our model above has first order difference a constant mean of 0, which clearly relates to the model having no significant trend or drift. Hence, since there is no drift after taking difference we do not have to include a constant.
+
+```{r}
+set.seed(42) 
+#Fitting ARIMA(0,1,2) Model and generating residual plot for the same
+fitmodel_1 <- Arima(no_women,order = c(0,1,2))
+summary(fitmodel_1)
+ggplot(data = no_women) + 
+  geom_point(mapping = aes(fitted(fitmodel_1), resid(fitmodel_1)), 
+             col="darkblue")+ ylab("Residual X Values") + 
+  xlab("Fitted Y Values")
+
+#Checking results from ARIMA(0,1,2) model
+checkresiduals(fitmodel_1)
+
+#Generating forecast for next 3 years (i.e. 2005,2006 and 2007) 
+#and generating plot for the same using ARIMA(0,1,2)
+forecastmodel1 <- forecast(fitmodel_1, h = 3)
+forecastmodel1
+autoplot(forecastmodel1) + xlab("Time (in Years)") +
+  ylab("Womens Murder Rate in the U.S/100,000 std population") + 
+  ggtitle("Forecast for next 3 years with ARIMA(0,1,2)")
+```
+Question 4:
+Answer -> Checking the result generated using Ljung-Box with null hypothesis as:
+H0: The model is fine
+H1: The model is not fine
+With this test we get a result where generated p-value = 0.2812 which related to not rejecting the null hypothesis. (i.e. The model is fine).
+Hence, model is satisfactory and consists no auto correlation in the residuals and is observed to follow a normal distribution.
+Finally concluding that model is Satisfactory and using ARIMA(0,1,2) we can move to the next step of forecasting using this model.
+Generated forecast plot shows a downwards trend to a constant and hence, decrease in the rate of murders and then reaching a constant state
+
+```{r}
+#Finding best ARIMA model and comparing it with the one generated above
+#Results for model with approximation and stepwise
+set.seed(42) 
+bestfitmodel_1 <- auto.arima(no_women,stepwise = TRUE, approximation = TRUE, 
+                             seasonal = FALSE)
+summary(bestfitmodel_1)
+forecast(bestfitmodel_1,h=3)
+bestfitmodel_1 %>% forecast(h=3) %>% autoplot() + xlab("Time (in Years)")
+  ylab("Womens Murder Rate in the U.S/100,000 std population")
+ggplot(data = no_women) + 
+  geom_point(mapping = aes(x=fitted(bestfitmodel_1), y=resid(bestfitmodel_1)),
+             col="red") + xlab("Residual X Value") + ylab("Fitted Y Value") + 
+  ggtitle("Residual check for ARIMA(1,2,1) Model")
+checkresiduals(bestfitmodel_1)
+```
+For model with approximation and stepwise -> ARIMA(1,2,1):
+Checking the result generated using Ljung-Box with null hypothesis as:
+H0: The model is fine
+H1: The model is not fine
+With this test we get a result where generated p-value = 0.1335 which related to not rejecting the null hypothesis. (i.e. The model is fine).
+Hence, model is satisfactory and consists no auto correlation in the residuals and is observed to follow a normal distribution.
+
+```{r}
+#Now trying ARIMA without approximation and without stepwise
+#Finding best ARIMA model and comparing it with the one generated above
+#Results for model with approximation and stepwise
+set.seed(42) 
+bestfitmodel_2 <- auto.arima(no_women,stepwise = FALSE, approximation = FALSE, 
+                             seasonal = FALSE)
+summary(bestfitmodel_2)
+forecast(bestfitmodel_2,h=3)
+bestfitmodel_2 %>% forecast(h=3) %>% autoplot() + xlab("Time (in Years)")
+  ylab("Womens Murder Rate in the U.S/100,000 std population")
+ggplot(data = no_women) + 
+  geom_point(mapping = aes(x=fitted(bestfitmodel_2), y=resid(bestfitmodel_2)), 
+             col="red") + xlab("Residual X Value") + ylab("Fitted Y Value") + 
+  ggtitle("Residual check for ARIMA(0,2,3) Model")
+checkresiduals(bestfitmodel_2)
+```
+For model without approximation and stepwise -> ARIMA(0,2,3):
+Checking the result generated using Ljung-Box with null hypothesis as:
+H0: The model is fine
+H1: The model is not fine
+With this test we get a result where generated p-value = 0.152 which related to not rejecting the null hypothesis. (i.e. The model is fine).
+Hence, model is satisfactory and consists no auto correlation in the residuals and is observed to follow a normal distribution.
+
+Question 5:
+Answer -> The results provided by auto ARIMA [ARIMA(1,2,1) and ARIMA(0,2,3)] are different than the ones predicted above.
+
+For ARIMA(1,2,1) -> one with approximation and stepwise 
+generates an AICc value of -6.39
+
+For ARIMA(0,2,3) -> one without approximation and stepwise 
+generates an AICc value of -6.7
+
+Our ARIMA(0,1,2) -> one generated by us 
+generated an AICc value of -12.95
+
+Comparing all these models we can clearly see that:
+ARIMA(0,1,2) > ARIMA(0,2,3) > ARIMA(1,2,1)  = -12.95 > -6.7 > -6.39
+
+Based on AICc value we conclude that ARIMA(1,2,1) generated by Auto Arima is the best model of the three with a better fit and small criterion
+
+
